@@ -206,6 +206,15 @@ const usePOSStore = create((set, get) => ({
     return data;
   },
 
+  confirmPaymentSuccess: (paymentData) => {
+    set({ paymentResult: paymentData, view: 'success' });
+    set(state => ({
+      tables: state.tables.map(t =>
+        t._id === state.selectedTable?._id ? { ...t, status: 'available' } : t
+      )
+    }));
+  },
+
   resetPOS: () => {
     set({
       selectedTable: null,

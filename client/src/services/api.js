@@ -86,7 +86,7 @@ export const sessionAPI = {
 
 // Reports
 export const reportAPI = {
-  getDashboard: () => API.get('/reports/dashboard'),
+  getDashboard: (params) => API.get('/reports/dashboard', { params }),
   getSales: (params) => API.get('/reports/sales', { params })
 };
 
@@ -106,6 +106,12 @@ export const selfOrderAPI = {
   getOrderStatus: (orderId) => axios.get(`${SELF_ORDER_BASE}/self-order/order/${orderId}/status`),
   // Pay
   payOrder: (orderId, data) => axios.post(`${SELF_ORDER_BASE}/self-order/order/${orderId}/pay`, data)
+};
+
+export const paymentAPI = {
+  getRazorpayKey: () => API.get('/payments/razorpay/key'),
+  createRazorpayOrder: (data) => API.post('/payments/razorpay/order', data),
+  verifyRazorpayPayment: (data) => API.post('/payments/razorpay/verify', data)
 };
 
 export default API;

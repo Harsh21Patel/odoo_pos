@@ -4,51 +4,152 @@ import Payment from '../models/Payment.js';
 // GET dashboard summary
 export const getDashboard = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { duration = 'today', from, to } = req.query;
+    
+    let startDate = new Date();
+    let endDate = new Date();
+    let prevStartDate = new Date();
+    let prevEndDate = new Date();
+    let groupByFormat = '%Y-%m-%d';
+    // Define the period constraints
+    if (duration === 'today') {
+      startDate.setHours(0, 0, 0, 0);
+      prevStartDate = new Date(startDate);
+      prevStartDate.setDate(prevStartDate.getDate() - 1);
+      prevEndDate = new Date(startDate);
+      groupByFormat = '%H:00';
+    } else if (duration === 'weekly') {
+      startDate.setDate(startDate.getDate() - 7);
+      prevStartDate = new Date(startDate);
+      prevStartDate.setDate(prevStartDate.getDate() - 7);
+      prevEndDate = new Date(startDate);
+    } else if (duration === 'monthly') {
+      startDate.setMonth(startDate.getMonth() - 1);
+      prevStartDate = new Date(startDate);
+      prevStartDate.setMonth(prevStartDate.getMonth() - 1);
+      prevEndDate = new Date(startDate);
+    } else if (duration === '365days') {
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      prevStartDate = new Date(startDate);
+      prevStartDate.setFullYear(prevStartDate.getFullYear() - 1);
+      prevEndDate = new Date(startDate);
+      groupByFormat = '%Y-%m';
+    } else if (duration === 'custom' && from && to) {
+      startDate = new Date(from);
+      endDate = new Date(to);
+      endDate.setHours(23, 59, 59, 999);
+      const diff = endDate.getTime() - startDate.getTime();
+      prevStartDate = new Date(startDate.getTime() - diff);
+      prevEndDate = new Date(startDate);
+    } else {
+      // Fallback
+      startDate.setHours(0, 0, 0, 0);
+      prevStartDate = new Date(startDate);
+      prevStartDate.setDate(prevStartDate.getDate() - 1);
+      prevEndDate = new Date(startDate);
+      groupByFormat = '%H:00';
+    }
 
-    const [todayOrders, todayRevenue, totalOrders] = await Promise.all([
-      Order.countDocuments({ createdAt: { $gte: today, $lt: tomorrow }, status: 'paid' }),
-      Order.aggregate([
-        { $match: { createdAt: { $gte: today, $lt: tomorrow }, status: 'paid' } },
-        { $group: { _id: null, total: { $sum: '$total' } } }
-      ]),
-      Order.countDocuments({ status: 'paid' })
+    // 1. Current Period Metrics
+    const currMetrics = await Order.aggregate([
+      { $match: { createdAt: { $gte: startDate, $lte: endDate }, status: 'paid' } },
+      { $group: { _id: null, totalRevenue: { $sum: '$total' }, orderCount: { $sum: 1 } } }
     ]);
+    const currRevenue = currMetrics[0]?.totalRevenue || 0;
+    const currOrders = currMetrics[0]?.orderCount || 0;
+    const currAvgOrder = currOrders > 0 ? currRevenue / currOrders : 0;
 
-    // Revenue by payment method today
-    const paymentBreakdown = await Payment.aggregate([
-      { $match: { createdAt: { $gte: today, $lt: tomorrow }, status: 'completed' } },
-      { $group: { _id: '$method', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    // 2. Previous Period Metrics
+    const prevMetrics = await Order.aggregate([
+      { $match: { createdAt: { $gte: prevStartDate, $lt: prevEndDate }, status: 'paid' } },
+      { $group: { _id: null, totalRevenue: { $sum: '$total' }, orderCount: { $sum: 1 } } }
     ]);
+    const prevRevenue = prevMetrics[0]?.totalRevenue || 0;
+    const prevOrders = prevMetrics[0]?.orderCount || 0;
+    const prevAvgOrder = prevOrders > 0 ? prevRevenue / prevOrders : 0;
 
-    // Top products
-    const topProducts = await Order.aggregate([
-      { $match: { status: 'paid', createdAt: { $gte: today, $lt: tomorrow } } },
-      { $unwind: '$items' },
-      { $group: { _id: '$items.productName', quantity: { $sum: '$items.quantity' }, revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } } } },
-      { $sort: { revenue: -1 } },
-      { $limit: 5 }
-    ]);
-
-    // Last 7 days revenue
-    const last7Days = await Order.aggregate([
-      { $match: { status: 'paid', createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
-      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: '$total' }, orders: { $sum: 1 } } },
+    // 3. Sales Chart (Time vs Revenue)
+    const salesChart = await Order.aggregate([
+      { $match: { createdAt: { $gte: startDate, $lte: endDate }, status: 'paid' } },
+      { $group: { _id: { $dateToString: { format: groupByFormat, date: '$createdAt' } }, revenue: { $sum: '$total' } } },
       { $sort: { _id: 1 } }
     ]);
 
+    // 4. Categories & Products Aggregation
+    // To get category, we lookup products. To get category name, we lookup categories.
+    const itemsAgg = await Order.aggregate([
+      { $match: { createdAt: { $gte: startDate, $lte: endDate }, status: 'paid' } },
+      { $unwind: '$items' },
+      { $lookup: { from: 'products', localField: 'items.product', foreignField: '_id', as: 'productDoc' } },
+      { $unwind: '$productDoc' },
+      { $lookup: { from: 'categories', localField: 'productDoc.category', foreignField: '_id', as: 'categoryDoc' } },
+      { $unwind: { path: '$categoryDoc', preserveNullAndEmptyArrays: true } },
+      { $group: {
+        _id: { 
+          productName: '$items.productName', 
+          categoryName: '$categoryDoc.name' 
+        },
+        revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+        qty: { $sum: '$items.quantity' }
+      }}
+    ]);
+
+    const topProductsMap = {};
+    const topCategoriesMap = {};
+
+    itemsAgg.forEach(item => {
+      const pName = item._id.productName;
+      const cName = item._id.categoryName || 'Uncategorized';
+      if (!topProductsMap[pName]) topProductsMap[pName] = { name: pName, qty: 0, revenue: 0 };
+      topProductsMap[pName].qty += item.qty;
+      topProductsMap[pName].revenue += item.revenue;
+
+      if (!topCategoriesMap[cName]) topCategoriesMap[cName] = { name: cName, revenue: 0 };
+      topCategoriesMap[cName].revenue += item.revenue;
+    });
+
+    const topProducts = Object.values(topProductsMap).sort((a,b) => b.revenue - a.revenue).slice(0, 5);
+    const topCategoriesRaw = Object.values(topCategoriesMap).sort((a,b) => b.revenue - a.revenue);
+    
+    // Convert topCategories into pie chart percentages
+    const totalCatRev = topCategoriesRaw.reduce((sum, c) => sum + c.revenue, 0);
+    const pieColors = ['#f59e0b', '#3b82f6', '#10b981', '#1f2937', '#8b5cf6', '#ef4444'];
+    const categoryChart = topCategoriesRaw.map((c, i) => ({
+      name: c.name,
+      revenue: c.revenue,
+      percent: totalCatRev > 0 ? (c.revenue / totalCatRev) * 100 : 0,
+      fill: pieColors[i % pieColors.length]
+    }));
+
+    // 5. Top Orders Table
+    const topOrders = await Order.find({ createdAt: { $gte: startDate, $lte: endDate }, status: 'paid' })
+      .sort('-total')
+      .limit(5)
+      .populate('session', 'sessionNumber')
+      .populate('staff', 'name')
+      .populate('table', 'number')
+      .lean();
+
     res.json({
-      todayOrders,
-      todayRevenue: todayRevenue[0]?.total || 0,
-      totalOrders,
-      paymentBreakdown,
+      summary: {
+        currRevenue, currOrders, currAvgOrder,
+        prevRevenue, prevOrders, prevAvgOrder
+      },
+      salesChart: salesChart.map(s => ({ time: s._id, revenue: s.revenue })),
+      categoryChart,
+      topOrders: topOrders.map(o => ({
+        orderNumber: o.orderNumber,
+        session: o.session ? o.session.sessionNumber : '-',
+        pos: o.tableName || (o.table ? o.table.number : 'Walk-in'),
+        date: o.createdAt,
+        employee: o.staff ? o.staff.name : 'Self-Order',
+        total: o.total
+      })),
       topProducts,
-      last7Days
+      topCategories: topCategoriesRaw.slice(0, 5)
     });
   } catch (error) {
+    console.error('getDashboard Error:', error);
     res.status(500).json({ message: error.message });
   }
 };

@@ -24,3 +24,7 @@ coverage/
 
 # Optional
 uploads/
+
+node_modules/
+client/node_modules/
+.cache/

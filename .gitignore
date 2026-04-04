@@ -1,14 +1,18 @@
 # Node modules
 node_modules/
+client/node_modules/
 
-# Environment files
+# Environment files (never commit secrets)
 .env
 .env.*
 server/.env
 client/.env
 
+# Cache
+.cache/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 
@@ -22,9 +26,5 @@ build/
 # Coverage
 coverage/
 
-# Optional
+# Optional uploads
 uploads/
-
-node_modules/
-client/node_modules/
-.cache/

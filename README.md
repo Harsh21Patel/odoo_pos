@@ -26,6 +26,9 @@ Cafes and restaurants often rely on fragmented systems — manual billing, delay
 **Odoo POS Cafe** solves this with a unified, real-time POS system featuring kitchen displays, QR self-ordering, and smart table management.
 
 ---
+## 📌 Demo Video (Click to play)
+[![Watch the video](https://img.youtube.com/vi/7RcsYIO6Rac/0.jpg)](https://www.youtube.com/watch?v=7RcsYIO6Rac)
+---
 
 ## 🖼️ Preview
 

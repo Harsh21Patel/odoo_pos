@@ -140,13 +140,13 @@ odoo-pos-cafe/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/odoo-pos-cafe.git
+git clone https://github.com/Harsh21Patel/odoo_pos.git
 cd odoo-pos-cafe
 ```
 
 ---
 
-### 2. Install Dependencies
+### 2. Install Dependencies on Frontend and Backend
 
 ```bash
 npm run install:all
@@ -184,7 +184,8 @@ REACT_APP_RAZORPAY_KEY_ID=your_key
 ### ▶️ Run the App
 
 ```bash
-npm run dev
+ Backend : npm run dev
+ Frontend : npm start
 ```
 
 * Frontend → http://localhost:3000
